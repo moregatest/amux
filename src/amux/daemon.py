@@ -136,7 +136,7 @@ def status(
     })
 
 
-@daemon_app.command("run")
+@daemon_app.command("run", hidden=True)
 def run(
     tmux_socket: Path | None = typer.Option(None, "--tmux-socket", help="Path to tmux server socket"),
 ) -> None:
@@ -153,6 +153,14 @@ def run(
     save_state(state_path, st)
 
     def _handle_term(_signum: int, _frame: object) -> None:
+        nonlocal client
+        if client is not None:
+            try:
+                client.close()
+            except Exception:
+                pass
+            client = None
+
         st2 = load_state(state_path)
         st2.daemon = None
         save_state(state_path, st2)
@@ -194,6 +202,11 @@ def run(
 
         except (FileNotFoundError, RuntimeError):
             # tmux not installed or control-mode process exited.
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
             client = None
             st = load_state(state_path)
             if st.daemon:
@@ -203,6 +216,11 @@ def run(
             backoff = min(60.0, backoff * 1.2)
         except TmuxTimeoutError:
             # Command timed out; treat as reconnect-worthy.
+            if client is not None:
+                try:
+                    client.close()
+                except Exception:
+                    pass
             client = None
             st = load_state(state_path)
             if st.daemon:

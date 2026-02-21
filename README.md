@@ -116,4 +116,4 @@ uv run amux daemon where
 
 ## Design
 
-See `docs/plans/2026-02-21-amux-phase-b-design.md`.
+See `docs/design/phase-b.md`. (Kept in-repo so it doesn't rot.)
