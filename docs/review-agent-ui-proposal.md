@@ -162,11 +162,53 @@ Claudex 的沙箱執行依賴 **E2B.dev**（付費雲端沙箱服務），Docker
 │  → anthropic-bridge（模型路由 / failover）      │
 │  → 確定性 pipeline（降級方案）                  │
 ├─────────────────────────────────────────────────┤
-│  Layer 0: 業務工具                               │
-│  → MCP Servers（客戶目錄、SEO 分析、內容生成）  │
-│  → 與上層完全解耦，可跨框架移植                 │
+│  Layer 0: 業務能力                               │
+│                                                  │
+│  Skills（流程知識層 — "how"）                    │
+│  → 網站架構生成流程（SKILL.md）                 │
+│  → SEO 分析工作流程（SKILL.md）                 │
+│  → 內容產出規範與流程（SKILL.md）               │
+│  → 業務規則、品質標準、SOP                      │
+│                                                  │
+│  MCP Servers（系統連接層 — "what"）              │
+│  → 客戶產品目錄 API（資料存取）                 │
+│  → SEO 工具 API（Ahrefs, GSC 等）               │
+│  → CMS 寫入介面                                 │
+│  → 內部資料庫查詢                               │
 └─────────────────────────────────────────────────┘
 ```
+
+### Skills vs MCP Servers：原方案的重大遺漏
+
+原方案將所有業務工具統一歸類為 MCP Servers，這混淆了兩個本質不同的層次：
+
+| 維度 | Skills | MCP Servers |
+|------|--------|-------------|
+| 本質 | 流程知識（domain expertise） | 系統連接（tool access） |
+| 回答的問題 | **怎麼做**（How） | **能用什麼**（What） |
+| 實作方式 | SKILL.md（Markdown + YAML frontmatter） | 編譯程式碼（Node.js, Python） |
+| 確定性 | 非確定性（Claude 推理執行） | 確定性（同輸入 = 同輸出） |
+| 開發成本 | 極低（寫 Markdown） | 中等（寫程式碼 + 部署） |
+| 可移植性 | Claude Code 生態系內 | 跨平台（任何支援 MCP 的 SDK） |
+
+**正確的分工模式：**
+
+以「網站架構生成」為例：
+- **Skill**（`/.claude/skills/site-architecture/SKILL.md`）定義：
+  - 生成流程的 SOP（先分析客戶產品 → 規劃 URL 結構 → 產生 sitemap → 生成頁面內容）
+  - 品質標準（每頁至少 3 個內部連結、H1 必須含主關鍵字等）
+  - 例外處理規則（產品數 < 10 時用單層架構、> 100 時用分類架構）
+- **MCP Server** 提供：
+  - `fetch_product_catalog(customer_id)` — 從客戶系統拉產品資料
+  - `check_keyword_volume(keywords[])` — 查詢關鍵字搜尋量
+  - `write_to_cms(pages[])` — 將生成的頁面寫入 CMS
+
+Skill 負責**編排**（告訴 Claude 按什麼順序、什麼規則做事），MCP Server 負責**執行**（提供具體的資料存取能力）。
+
+**這區分至關重要，因為：**
+1. **降級策略更精確**：模型切換時，Skills 可能需要調整（不同模型理解 Markdown 指令的能力不同），但 MCP Servers 完全不受影響
+2. **團隊分工更清楚**：業務人員可以維護 Skills（寫 Markdown），工程師維護 MCP Servers（寫程式碼）
+3. **迭代速度不同**：業務規則變動時改 SKILL.md 即可，不需要重新部署任何服務
 
 ### 為什麼不用 Claudex 的全家桶？
 
@@ -191,7 +233,7 @@ Claudex 把 Layer 1-3 全部綁在一起。這意味著：
 ### 5.1 正確的判斷
 
 - ✅ Claude Agent SDK 的 agent loop 品質是核心價值，不只是模型本身
-- ✅ MCP 封裝業務工具是正確的長期投資
+- ✅ MCP 封裝業務工具是正確的長期投資（但應搭配 Skills，見第四節）
 - ✅ 分級 failover 策略（同模型異基礎設施 → 異模型 → 確定性 pipeline）思路清晰
 - ✅ anthropic-bridge 確實是真實存在的專案，可用於模型路由
 
@@ -224,7 +266,8 @@ anthropic-bridge 實際上有多個同名專案：
 UI：Chainlit（Python 生態，與 amux 一致）
 Agent：Claude Agent SDK（Python 版）
 模型路由：anthropic-bridge（但需評估 fork 維護的意願）
-業務工具：MCP Servers
+業務流程：Skills（SKILL.md — 網站架構生成 SOP、SEO 分析流程、內容規範）
+業務連接：MCP Servers（客戶資料 API、SEO 工具 API、CMS 介面）
 ```
 
 ### 如果追求「功能強大、可客製化」（推薦）
@@ -235,7 +278,8 @@ UI：Vercel AI SDK + shadcn/ui 自建（6-8 週）
 Agent API：自建 API Gateway（FastAPI or Next.js API Routes）
 Agent Runtime：Claude Agent SDK（TypeScript 版，與前端同語言）
 模型路由：自建簡易 proxy 或 使用 OpenRouter 直接路由
-業務工具：MCP Servers
+業務流程：Skills（SKILL.md — 可由業務人員維護的 Markdown 工作流程定義）
+業務連接：MCP Servers（確定性的資料存取與外部系統整合）
 ```
 
 ### 如果要同時評估多方案（建議的 Phase 1）
@@ -261,4 +305,8 @@ Agent Runtime：Claude Agent SDK（TypeScript 版，與前端同語言）
 | 上線時間 | 8 週（樂觀） | 8-10 週（含 UI 自建，但更穩固） |
 | 長期維護風險 | 高 | 低 |
 
-**核心建議：方案的 Agent Runtime 層（Claude Agent SDK + MCP + failover 策略）判斷正確且可採用，但 UI 層應獨立選型，不要綁定在 Claudex 這個小型社群專案上。**
+**核心建議：**
+
+1. **Agent Runtime 層**（Claude Agent SDK + failover 策略）判斷正確，可採用
+2. **UI 層**應獨立選型，不要綁定在 Claudex 這個小型社群專案上
+3. **業務工具層**應拆分為 Skills（流程知識）+ MCP Servers（系統連接），而非全部歸類為 MCP — 這讓業務人員能用 Markdown 維護工作流程，工程師專注於 API 整合
